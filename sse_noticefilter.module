@@ -1,0 +1,74 @@
+<?php
+
+/**
+ * implement hook_block_info()
+ */
+function sse_noticefilter_block_info() {
+  $blocks = [];
+  $blocks['notice_filter_block']['info'] = t('SSE: 通知筛选区块');
+  $blocks['notice_filter_block']['cache'] = DRUPAL_NO_CACHE;
+  return $blocks;
+}
+
+/**
+ * implement hook_block_view()
+ */
+function sse_noticefilter_block_view($delta = '') {
+  if ($delta === 'notice_filter_block') {
+    $block = [];
+    $block['subject'] = t('通知筛选');
+    $block['content'] = theme('notice_filter_block', [
+      'filters' => _sse_noticefilter_get_filters()
+    ]);
+    return $block;
+  }
+}
+
+/**
+ * 获取过滤术语
+ */
+function _sse_noticefilter_get_filters() {
+  $filters = [];
+  $filters[] = _sse_noticefilter_get_filter('target', 'notice_target');
+  $filters[] = _sse_noticefilter_get_filter('category', 'notice_category');
+  return $filters;
+}
+
+function _sse_noticefilter_get_filter($meta, $taxonomy_name) {
+  $data = [];
+
+  $vocabulary = taxonomy_vocabulary_machine_name_load($taxonomy_name);
+  $tree = taxonomy_get_tree($vocabulary->vid);
+  $list = [];
+  $nested = [];
+  foreach ($tree as $term) {
+    // 对于 notice_target 检查是否隐藏
+    if ($meta === 'target') {
+      $termObj = taxonomy_term_load($term->tid);
+      if (isset($termObj->field_taxonomy_target_hidden) && $termObj->field_taxonomy_target_hidden[LANGUAGE_NONE][0]['value'] == 1) {
+        continue;
+      }
+    }
+    $term->children = [];
+    $list[$term->tid] = $term;
+  }
+  uasort($list, function ($a, $b) {
+    return $a->weight > $b->weight;
+  });
+  foreach ($list as $tid => &$term) {
+    foreach ($term->parents as $ptid) {
+      if ($ptid == '0') {
+        $nested[$tid] = $term;
+      } elseif (isset($list[$ptid])) {
+        $list[$ptid]->children[$tid] = $term;
+      }
+    }
+  }
+  unset($term);
+
+  return [
+    'title' => $vocabulary->name,
+    'meta' => $meta,
+    'tree' => $nested
+  ];
+}
